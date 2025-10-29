@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单WebSocket测试客户端</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .panel {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        label {
+            display: inline-block;
+            width: 120px;
+            font-weight: bold;
+        }
+        input, textarea, button, select {
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        input, textarea, select {
+            width: 300px;
+        }
+        textarea {
+            height: 80px;
+            resize: vertical;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            margin-right: 10px;
+            padding: 8px 15px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #eee;
+            padding: 10px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .status-connected {
+            color: green;
+            font-weight: bold;
+        }
+        .status-disconnected {
+            color: red;
+            font-weight: bold;
+        }
+        .message-types {
+            margin: 10px 0;
+        }
+        .message-types label {
+            width: auto;
+            margin-right: 15px;
+        }
+        .message-types input {
+            width: auto;
+            margin-right: 5px;
+        }
+        .heartbeat-controls {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>简单WebSocket测试客户端</h1>
+    
+    <!-- 连接面板 -->
+    <div class="panel">
+        <h2>连接设置</h2>
+        <div class="form-group">
+            <label for="serverUrl">服务器地址:</label>
+            <input type="text" id="serverUrl" placeholder="例如: ws://localhost:8881/order-service/ws/simple" 
+                   value="ws://localhost:8881/order-service/ws/simple">
+        </div>
+        <div class="form-group">
+            <label for="endpointType">端点类型:</label>
+            <select id="endpointType">
+                <option value="/ws/simple">简单端点 (/ws/simple)</option>
+                <option value="/ws/app">APP端点 (/ws/app)</option>
+                <option value="/ws/store">门店端点 (/ws/store)</option>
+            </select>
+        </div>
+        <button id="connectBtn">连接</button>
+        <button id="disconnectBtn" disabled>断开连接</button>
+        <div>连接状态: <span id="connectionStatus" class="status-disconnected">未连接</span></div>
+    </div>
+    
+    <!-- 心跳设置 -->
+    <div class="panel">
+        <h2>心跳设置</h2>
+        <div class="form-group">
+            <label for="heartbeatInterval">心跳间隔(秒):</label>
+            <input type="number" id="heartbeatInterval" value="30" min="1">
+        </div>
+        <div class="heartbeat-controls">
+            <button id="startHeartbeatBtn" disabled>开始心跳</button>
+            <button id="stopHeartbeatBtn" disabled>停止心跳</button>
+        </div>
+    </div>
+    
+    <!-- 消息发送面板 -->
+    <div class="panel">
+        <h2>发送消息</h2>
+        <div class="message-types">
+            <label><input type="radio" name="messageType" value="text" checked> 文本消息</label>
+            <label><input type="radio" name="messageType" value="ping"> Ping消息</label>
+            <label><input type="radio" name="messageType" value="broadcast"> 广播消息</label>
+            <label><input type="radio" name="messageType" value="connect"> 连接消息</label>
+        </div>
+        <div class="form-group">
+            <label for="clientId">客户端ID:</label>
+            <input type="text" id="clientId" placeholder="用户ID或门店ID">
+        </div>
+        <div class="form-group">
+            <label for="messageContent">消息内容:</label>
+            <textarea id="messageContent" placeholder="输入要发送的消息内容"></textarea>
+        </div>
+        <button id="sendBtn" disabled>发送消息</button>
+    </div>
+    
+    <!-- 日志显示 -->
+    <div class="panel">
+        <h2>日志输出</h2>
+        <div id="logOutput" class="log"></div>
+        <button id="clearLogBtn">清空日志</button>
+    </div>
+
+    <script>
+        class SimpleWebSocketClient {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.heartbeatTimer = null;
+                
+                this.initializeElements();
+                this.bindEvents();
+            }
+            
+            initializeElements() {
+                this.serverUrlInput = document.getElementById('serverUrl');
+                this.endpointTypeSelect = document.getElementById('endpointType');
+                this.clientIdInput = document.getElementById('clientId');
+                this.messageContentTextarea = document.getElementById('messageContent');
+                this.connectionStatusSpan = document.getElementById('connectionStatus');
+                this.logOutputDiv = document.getElementById('logOutput');
+                this.heartbeatIntervalInput = document.getElementById('heartbeatInterval');
+                
+                this.connectBtn = document.getElementById('connectBtn');
+                this.disconnectBtn = document.getElementById('disconnectBtn');
+                this.sendBtn = document.getElementById('sendBtn');
+                this.clearLogBtn = document.getElementById('clearLogBtn');
+                this.startHeartbeatBtn = document.getElementById('startHeartbeatBtn');
+                this.stopHeartbeatBtn = document.getElementById('stopHeartbeatBtn');
+                
+                // 消息类型单选按钮
+                this.messageTypeRadios = document.querySelectorAll('input[name="messageType"]');
+            }
+            
+            bindEvents() {
+                this.connectBtn.addEventListener('click', () => this.connect());
+                this.disconnectBtn.addEventListener('click', () => this.disconnect());
+                this.sendBtn.addEventListener('click', () => this.sendMessage());
+                this.clearLogBtn.addEventListener('click', () => this.clearLog());
+                this.startHeartbeatBtn.addEventListener('click', () => this.startHeartbeat());
+                this.stopHeartbeatBtn.addEventListener('click', () => this.stopHeartbeat());
+                
+                // 端点类型改变时更新服务器地址
+                this.endpointTypeSelect.addEventListener('change', () => {
+                    const endpoint = this.endpointTypeSelect.value;
+                    const baseUrl = this.serverUrlInput.value.split('/ws/')[0];
+                    this.serverUrlInput.value = baseUrl + endpoint;
+                });
+            }
+            
+            connect() {
+                const serverUrl = this.serverUrlInput.value.trim();
+                
+                if (!serverUrl) {
+                    this.log('错误: 请填写服务器地址');
+                    return;
+                }
+                
+                try {
+                    // 创建WebSocket连接
+                    this.ws = new WebSocket(serverUrl);
+                    
+                    this.ws.onopen = (event) => {
+                        this.log('连接成功');
+                        this.isConnected = true;
+                        this.updateConnectionStatus(true);
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        this.log('收到消息: ' + event.data);
+                        
+                        // 解析消息，如果是一个注册成功的响应，则设置客户端ID
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.clientId) {
+                                this.clientIdInput.value = data.clientId;
+                            }
+                        } catch (e) {
+                            // 忽略解析错误
+                        }
+                    };
+                    
+                    this.ws.onclose = (event) => {
+                        this.log('连接已关闭: code=' + event.code + ', reason=' + event.reason);
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                        this.stopHeartbeat();
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        this.log('连接错误: ' + error);
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                    };
+                } catch (e) {
+                    this.log('连接异常: ' + e);
+                    this.isConnected = false;
+                    this.updateConnectionStatus(false);
+                }
+            }
+            
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.log('主动断开连接');
+                }
+                this.stopHeartbeat();
+            }
+            
+            sendMessage() {
+                if (!this.isConnected) {
+                    this.log('错误: 未连接到服务器');
+                    return;
+                }
+                
+                const content = this.messageContentTextarea.value.trim();
+                const messageType = this.getSelectedMessageType();
+                const clientId = this.clientIdInput.value.trim();
+                
+                let message = content;
+                
+                switch (messageType) {
+                    case 'ping':
+                        message = 'ping';
+                        break;
+                    case 'broadcast':
+                        message = 'broadcast: ' + (content || '默认广播消息');
+                        break;
+                    case 'connect':
+                        if (!clientId) {
+                            this.log('错误: 连接消息需要填写客户端ID');
+                            return;
+                        }
+                        // 构造连接消息
+                        message = JSON.stringify({
+                            type: "connect",
+                            clientId: clientId
+                        });
+                        break;
+                    case 'text':
+                    default:
+                        if (!content) {
+                            this.log('错误: 请填写消息内容');
+                            return;
+                        }
+                        break;
+                }
+                
+                this.ws.send(message);
+                this.log('发送消息: ' + message);
+            }
+            
+            startHeartbeat() {
+                if (!this.isConnected) {
+                    this.log('错误: 未连接到服务器');
+                    return;
+                }
+                
+                const interval = parseInt(this.heartbeatIntervalInput.value) * 1000;
+                
+                if (isNaN(interval) || interval <= 0) {
+                    this.log('错误: 请输入有效的心跳间隔');
+                    return;
+                }
+                
+                this.stopHeartbeat(); // 先清除现有的定时器
+                
+                this.heartbeatTimer = setInterval(() => {
+                    this.ws.send('{"type":"heartbeat"}');
+                    this.log('发送心跳');
+                }, interval);
+                
+                this.log(`开始心跳，间隔: ${interval/1000} 秒`);
+            }
+            
+            stopHeartbeat() {
+                if (this.heartbeatTimer) {
+                    clearInterval(this.heartbeatTimer);
+                    this.heartbeatTimer = null;
+                    this.log('停止心跳');
+                }
+            }
+            
+            getSelectedMessageType() {
+                for (const radio of this.messageTypeRadios) {
+                    if (radio.checked) {
+                        return radio.value;
+                    }
+                }
+                return 'text';
+            }
+            
+            updateConnectionStatus(connected) {
+                this.connectionStatusSpan.textContent = connected ? '已连接' : '未连接';
+                this.connectionStatusSpan.className = connected ? 'status-connected' : 'status-disconnected';
+                
+                this.connectBtn.disabled = connected;
+                this.disconnectBtn.disabled = !connected;
+                this.sendBtn.disabled = !connected;
+                this.startHeartbeatBtn.disabled = !connected;
+                this.stopHeartbeatBtn.disabled = !connected;
+            }
+            
+            log(message) {
+                const time = new Date().toLocaleTimeString();
+                const logEntry = `[${time}] ${message}`;
+                
+                const logDiv = document.createElement('div');
+                logDiv.textContent = logEntry;
+                
+                this.logOutputDiv.appendChild(logDiv);
+                this.logOutputDiv.scrollTop = this.logOutputDiv.scrollHeight;
+            }
+            
+            clearLog() {
+                this.logOutputDiv.innerHTML = '';
+            }
+        }
+        
+        // 初始化客户端
+        document.addEventListener('DOMContentLoaded', () => {
+            const client = new SimpleWebSocketClient();
+        });
+    </script>
+</body>
+</html>

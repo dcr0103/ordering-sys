@@ -1,0 +1,4 @@
+# 项目排除路径
+/crm-service/target/
+/order-service/target/
+/stat-service/target/

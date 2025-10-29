@@ -1,0 +1,99 @@
+{
+  "users": [
+    {
+      "name": "cy",
+      "password": "123456",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    },
+    {
+      "name": "cy"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "cy",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    },
+    {
+      "user": "cy",
+      "vhost": "cy",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "queues": [
+    {
+      "name": "order.stat.queue",
+      "vhost": "cy",
+      "durable": true
+    },
+    {
+      "name": "order.notify.queue.stat",
+      "vhost": "cy",
+      "durable": true
+    },
+    {
+      "name": "order.notify.queue.crm",
+      "vhost": "cy",
+      "durable": true
+    },
+    {
+      "name": "order.notify.queue.inventory",
+      "vhost": "cy",
+      "durable": true
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "order.stat.exchange",
+      "vhost": "cy",
+      "type": "direct",
+      "durable": true
+    },
+    {
+      "name": "order.fanout.exchange",
+      "vhost": "cy",
+      "type": "fanout",
+      "durable": true
+    }
+  ],
+  "bindings": [
+    {
+      "source": "order.stat.exchange",
+      "vhost": "cy",
+      "destination": "order.stat.queue",
+      "destination_type": "queue",
+      "routing_key": "order.stat.#"
+    },
+    {
+      "source": "order.fanout.exchange",
+      "vhost": "cy",
+      "destination": "order.notify.queue.stat",
+      "destination_type": "queue",
+      "routing_key": ""
+    },
+    {
+      "source": "order.fanout.exchange",
+      "vhost": "cy",
+      "destination": "order.notify.queue.crm",
+      "destination_type": "queue",
+      "routing_key": ""
+    },
+    {
+      "source": "order.fanout.exchange",
+      "vhost": "cy",
+      "destination": "order.notify.queue.inventory",
+      "destination_type": "queue",
+      "routing_key": ""
+    }
+  ]
+}

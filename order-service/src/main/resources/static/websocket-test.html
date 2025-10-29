@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket测试客户端</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2/lib/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .panel {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .log {
+            height: 200px;
+            overflow-y: scroll;
+            border: 1px solid #eee;
+            padding: 10px;
+            background-color: #f9f9f9;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        input, button {
+            padding: 5px;
+            margin: 5px;
+        }
+        .connected {
+            color: green;
+            font-weight: bold;
+        }
+        .disconnected {
+            color: red;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket测试客户端</h1>
+    
+    <div class="panel">
+        <h2>连接设置</h2>
+        <label>WebSocket URL: 
+            <input type="text" id="wsUrl" value="ws://localhost:8881/order-service/ws" size="50">
+        </label>
+        <button onclick="connect()">连接</button>
+        <button onclick="disconnect()">断开连接</button>
+        <div>连接状态: <span id="connectionStatus">未连接</span></div>
+    </div>
+    
+    <div class="panel">
+        <h2>用户连接</h2>
+        <label>用户ID: <input type="text" id="userId" value="user123"></label>
+        <button onclick="sendUserConnect()">发送用户连接</button>
+        <button onclick="sendUserHeartbeat()">发送用户心跳</button>
+    </div>
+    
+    <div class="panel">
+        <h2>门店连接</h2>
+        <label>门店ID: <input type="text" id="storeId" value="store123"></label>
+        <button onclick="sendStoreConnect()">发送门店连接</button>
+        <button onclick="sendStoreHeartbeat()">发送门店心跳</button>
+    </div>
+    
+    <div class="panel">
+        <h2>日志</h2>
+        <div id="log" class="log"></div>
+        <button onclick="clearLog()">清空日志</button>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let heartbeatInterval = null;
+
+        function connect() {
+            const url = document.getElementById('wsUrl').value;
+            const socket = new SockJS(url);
+            stompClient = Stomp.over(socket);
+            
+            stompClient.connect({}, function (frame) {
+                log('连接成功: ' + frame);
+                document.getElementById('connectionStatus').textContent = '已连接';
+                document.getElementById('connectionStatus').className = 'connected';
+                
+                // 订阅心跳响应
+                stompClient.subscribe('/topic/heartbeat', function (response) {
+                    log('收到心跳响应: ' + response.body);
+                });
+                
+                // 订阅连接确认
+                stompClient.subscribe('/user/queue/connection', function (response) {
+                    log('收到用户连接确认: ' + response.body);
+                });
+                
+                // 订阅门店连接确认
+                stompClient.subscribe('/topic/store/' + document.getElementById('storeId').value + '/connection', function (response) {
+                    log('收到门店连接确认: ' + response.body);
+                });
+                
+                // 开始自动发送心跳（每30秒一次）
+                startHeartbeat();
+            }, function (error) {
+                log('连接错误: ' + error);
+                document.getElementById('connectionStatus').textContent = '连接失败';
+                document.getElementById('connectionStatus').className = 'disconnected';
+            });
+        }
+        
+        function disconnect() {
+            if (stompClient !== null) {
+                stompClient.disconnect();
+                log('连接已断开');
+                document.getElementById('connectionStatus').textContent = '未连接';
+                document.getElementById('connectionStatus').className = 'disconnected';
+            }
+            
+            // 停止心跳
+            stopHeartbeat();
+        }
+        
+        function sendUserConnect() {
+            if (stompClient !== null && stompClient.connected) {
+                const userId = document.getElementById('userId').value;
+                const message = {
+                    userId: userId
+                };
+                stompClient.send("/app/user/connect", {}, JSON.stringify(message));
+                log('发送用户连接消息: ' + JSON.stringify(message));
+            } else {
+                log('错误: WebSocket未连接');
+            }
+        }
+        
+        function sendUserHeartbeat() {
+            if (stompClient !== null && stompClient.connected) {
+                const userId = document.getElementById('userId').value;
+                const message = {
+                    userId: userId,
+                    timestamp: Date.now()
+                };
+                stompClient.send("/app/user/heartbeat", {}, JSON.stringify(message));
+                log('发送用户心跳消息: ' + JSON.stringify(message));
+            } else {
+                log('错误: WebSocket未连接');
+            }
+        }
+        
+        function sendStoreConnect() {
+            if (stompClient !== null && stompClient.connected) {
+                const storeId = document.getElementById('storeId').value;
+                const message = {
+                    storeId: storeId
+                };
+                stompClient.send("/app/store/connect", {}, JSON.stringify(message));
+                log('发送门店连接消息: ' + JSON.stringify(message));
+            } else {
+                log('错误: WebSocket未连接');
+            }
+        }
+        
+        function sendStoreHeartbeat() {
+            if (stompClient !== null && stompClient.connected) {
+                const storeId = document.getElementById('storeId').value;
+                const message = {
+                    storeId: storeId,
+                    timestamp: Date.now()
+                };
+                stompClient.send("/app/store/heartbeat", {}, JSON.stringify(message));
+                log('发送门店心跳消息: ' + JSON.stringify(message));
+            } else {
+                log('错误: WebSocket未连接');
+            }
+        }
+        
+        function sendGlobalHeartbeat() {
+            if (stompClient !== null && stompClient.connected) {
+                const message = {
+                    timestamp: Date.now()
+                };
+                stompClient.send("/app/heartbeat", {}, JSON.stringify(message));
+                log('发送全局心跳消息: ' + JSON.stringify(message));
+            } else {
+                log('错误: WebSocket未连接');
+            }
+        }
+        
+        function startHeartbeat() {
+            stopHeartbeat(); // 先清除现有的定时器
+            heartbeatInterval = setInterval(function() {
+                sendUserHeartbeat();
+                sendStoreHeartbeat();
+            }, 30000); // 每30秒发送一次心跳
+            log('开始自动心跳 (每30秒)');
+        }
+        
+        function stopHeartbeat() {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+                log('停止自动心跳');
+            }
+        }
+        
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += '[' + time + '] ' + message + '\n';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // 页面加载完成后初始化
+        window.onload = function() {
+            document.getElementById('connectionStatus').className = 'disconnected';
+        };
+    </script>
+</body>
+</html>

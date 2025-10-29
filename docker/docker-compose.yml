@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.1.4-management
+    container_name: order-system-rabbitmq
+    hostname: rabbitmq-host
+    ports:
+      # AMQP协议端口
+      - "5672:5672"
+      # 管理界面端口
+      - "15672:15672"
+    environment:
+      # 默认用户名和密码
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-cy}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-123456}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VIRTUAL_HOST:-cy}
+    volumes:
+      # 持久化数据
+      - rabbitmq_data:/var/lib/rabbitmq
+      # 配置文件（如果需要）
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      # 日志（可选）
+      - ./log:/var/log/rabbitmq
+      # 插件（延迟消息）
+      - ./plugins/rabbitmq_delayed_message_exchange-4.1.0.ez:/opt/rabbitmq/plugins/rabbitmq_delayed_message_exchange-4.1.0.ez
+    networks:
+      - order-system-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  rabbitmq_data:
+
+networks:
+  order-system-network:
+    driver: bridge
