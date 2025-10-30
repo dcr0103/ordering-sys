@@ -87,14 +87,3 @@ docker-compose up -d
 每个服务目录下都包含.env文件示例，可以复制并修改为实际配置。
 
 **注意**：项目已集成[dotenv-java](https://github.com/cdimascio/dotenv-java)库，可自动读取.env文件中的环境变量。应用启动时会自动加载.env文件中的配置。
-
-如果需要手动设置环境变量，可以通过以下方式：
-
-1. 在系统环境中设置变量
-2. 在启动应用时通过命令行参数指定：
-   ```bash
-   export RABBITMQ_HOST=120.78.138.7
-   export RABBITMQ_PORT=5672
-   # 或者
-   java -jar app.jar --RABBITMQ_HOST=120.78.138.7 --RABBITMQ_PORT=5672
-   ```
